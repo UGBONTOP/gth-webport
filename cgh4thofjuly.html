@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-    <title>Prims Webported CGH: 4th of July 2024</title>
+    <title>Prims 4th of July 2024</title>
     <style>
       * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -35,7 +35,6 @@
         display: block;
       }
 
-      /* Fullscreen button */
       #fullscreen-btn {
         position: absolute;
         bottom: 10px;
@@ -56,7 +55,6 @@
       #fullscreen-btn:hover { background: rgba(0,0,0,0.85); opacity: 1; }
       #fullscreen-btn svg { width: 18px; height: 18px; fill: #fff; }
 
-      /* Loading overlay */
       #loading-overlay {
         position: absolute;
         inset: 0;
@@ -91,8 +89,12 @@
         color: rgba(255,255,255,0.5);
         letter-spacing: 0.08em;
       }
+      #loading-status {
+        font-size: 10px;
+        color: rgba(255,255,255,0.35);
+        letter-spacing: 0.05em;
+      }
 
-      /* Hide fullscreen button when in fullscreen */
       :fullscreen #fullscreen-btn,
       :-webkit-full-screen #fullscreen-btn,
       :-moz-full-screen #fullscreen-btn {
@@ -113,54 +115,58 @@
       <div id="loading-overlay">
         <div id="loading-text">LOADING... 0%</div>
         <div id="loading-bar-bg"><div id="loading-bar-fill"></div></div>
+        <div id="loading-status">Preparing...</div>
       </div>
     </div>
 
     <script>
     (function () {
-      // Base CDN path — everything under the game's Build folder is served from here.
-      // NOTE: jsDelivr's GitHub CDN format is user/repo@ref/path — no "tree" segment.
       const CDN_BASE = 'https://cdn.jsdelivr.net/gh/UGBONTOP/randomhtmlstuffidfk@main/Build';
 
-      // Filenames contain literal spaces, which must be percent-encoded for a real HTTP fetch.
-      function cdnUrl(path, host) {
-        const base = host
-          ? CDN_BASE.replace('cdn.jsdelivr.net', host)
-          : CDN_BASE;
-        return encodeURI(`${base}/${path}`);
-      }
+      const DATA_PARTS = 37;
+      const WASM_PARTS =  3;
 
-      const DATA_PARTS  = 37; 
-      const WASM_PARTS  =  3; 
+      // part19 was corrupted on the original repo (served as a Git LFS pointer file
+      // instead of the real ~15MB chunk) — re-hosted on a separate repo instead.
+      const PART_OVERRIDES = {
+        19: 'https://cdn.jsdelivr.net/gh/UGBONTOP/AQRDAWD@main/cgh%20webgl.part19',
+      };
 
       function dataPartUrl(i) {
+        if (PART_OVERRIDES[i]) return PART_OVERRIDES[i];
         const n = String(i).padStart(2, '0');
-        return cdnUrl(`data/cgh webgl.part${n}`);
+        return `${CDN_BASE}/data/cgh webgl.part${n}`;
       }
       function wasmPartUrl(i) {
-        // Part 2 is ~15MB and gets flaky 403s on the default combo CDN — pin it to the Fastly-only host.
-        const host = i === 2 ? 'fastly.jsdelivr.net' : undefined;
-        return cdnUrl(`wasm/cgh webgl.part${i}`, host);
+        return `${CDN_BASE}/wasm/cgh webgl.part${i}`;
       }
 
-      const totalParts = DATA_PARTS + WASM_PARTS;
-      let completedParts = 0;
-      function onPartLoaded() {
-        completedParts++;
-        const pct = Math.round((completedParts / totalParts) * 100);
-        document.getElementById('loading-bar-fill').style.width = pct + '%';
-        document.getElementById('loading-text').textContent = `LOADING... ${pct}%`;
+      const dataUrls = Array.from({ length: DATA_PARTS }, (_, i) => dataPartUrl(i + 1));
+      const wasmUrls = Array.from({ length: WASM_PARTS }, (_, i) => wasmPartUrl(i + 1));
+
+      // ---- UI helpers ----
+      function setBar(pct) {
+        document.getElementById('loading-bar-fill').style.width = Math.min(100, pct).toFixed(1) + '%';
+      }
+      function setText(msg) { document.getElementById('loading-text').textContent = msg; }
+      function setStatus(msg) { document.getElementById('loading-status').textContent = msg; }
+
+      // ---- Fetch + combine parts into ONE buffer, then hand Unity a real blob URL ----
+      // (No window.fetch / XMLHttpRequest patching — that breaks under file:// and causes
+      // wasm runtime crashes.)
+      async function fetchPart(url) {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`Failed to fetch ${url}: ${res.status}`);
+        return res.arrayBuffer();
       }
 
-      async function fetchParts(urls) {
-        const buffers = await Promise.all(urls.map(async url => {
-          const res = await fetch(url);
-          if (!res.ok) throw new Error(`Failed to fetch ${url}: ${res.status}`);
-          const buf = await res.arrayBuffer();
-          onPartLoaded();
-          return buf;
-        }));
-
+      async function fetchAndCombine(urls, label, barStart, barEnd) {
+        const buffers = [];
+        for (let i = 0; i < urls.length; i++) {
+          setStatus(`Downloading ${label} part ${i + 1} / ${urls.length}`);
+          buffers.push(await fetchPart(urls[i]));
+          setBar(barStart + (barEnd - barStart) * ((i + 1) / urls.length));
+        }
         const total = buffers.reduce((sum, b) => sum + b.byteLength, 0);
         const merged = new Uint8Array(total);
         let offset = 0;
@@ -171,54 +177,17 @@
         return merged.buffer;
       }
 
-      const dataUrls = Array.from({ length: DATA_PARTS }, (_, i) => dataPartUrl(i + 1));
-      const wasmUrls = Array.from({ length: WASM_PARTS }, (_, i) => wasmPartUrl(i + 1));
-
-      const cachedBlobs = {};
-
-      async function preloadAssets() {
-        const [dataBuf, wasmBuf] = await Promise.all([
-          fetchParts(dataUrls),
-          fetchParts(wasmUrls),
-        ]);
-
-        cachedBlobs['__data__'] = URL.createObjectURL(
-          new Blob([dataBuf], { type: 'application/octet-stream' })
-        );
-        cachedBlobs['__wasm__'] = URL.createObjectURL(
-          new Blob([wasmBuf], { type: 'application/wasm' })
-        );
+      function loadScript(url) {
+        return new Promise((resolve, reject) => {
+          const s = document.createElement('script');
+          s.src = url;
+          s.onload = resolve;
+          s.onerror = () => reject(new Error('Script load failed: ' + url));
+          document.head.appendChild(s);
+        });
       }
 
-
-      const _origFetch = window.fetch.bind(window);
-      window.fetch = function (input, init) {
-        const url = typeof input === 'string' ? input : input.url || String(input);
-
-        if (url.includes('webgl.data') && cachedBlobs['__data__']) {
-          return _origFetch(cachedBlobs['__data__'], init);
-        }
-        if (url.includes('webgl.wasm') && cachedBlobs['__wasm__']) {
-          return _origFetch(cachedBlobs['__wasm__'], init);
-        }
-        return _origFetch(input, init);
-      };
-
-
-      const _XHROpen = XMLHttpRequest.prototype.open;
-      XMLHttpRequest.prototype.open = function (method, url, ...rest) {
-        let patchedUrl = url;
-        if (typeof url === 'string') {
-          if (url.includes('webgl.data') && cachedBlobs['__data__']) {
-            patchedUrl = cachedBlobs['__data__'];
-          } else if (url.includes('webgl.wasm') && cachedBlobs['__wasm__']) {
-            patchedUrl = cachedBlobs['__wasm__'];
-          }
-        }
-        return _XHROpen.call(this, method, patchedUrl, ...rest);
-      };
-
-
+      // ---- Responsive scaling ----
       const GAME_ASPECT = 960 / 600;
 
       function scaleGame() {
@@ -250,7 +219,6 @@
         wrapper.style.height = h + 'px';
         wrapper.style.transform = '';
 
-
         canvas.style.width  = w + 'px';
         canvas.style.height = h + 'px';
         canvas.width  = w;
@@ -260,30 +228,42 @@
       scaleGame();
       window.addEventListener('resize', scaleGame);
 
-
+      // ---- Boot ----
       async function boot() {
-        await new Promise((resolve, reject) => {
-          const s = document.createElement('script');
-          s.src = cdnUrl('cgh webgl.loader.js');
-          s.onload = resolve;
-          s.onerror = reject;
-          document.head.appendChild(s);
-        });
+        setText('LOADING... 0%');
+        setStatus('Fetching loader script...');
 
+        await loadScript(`${CDN_BASE}/cgh webgl.loader.js`);
+        setBar(2);
 
-        await preloadAssets();
+        setStatus('Downloading data...');
+        const dataBuffer = await fetchAndCombine(dataUrls, 'DATA', 2, 70);
+
+        setStatus('Downloading wasm...');
+        const wasmBuffer = await fetchAndCombine(wasmUrls, 'WASM', 70, 92);
+
+        setStatus('Preparing blobs...');
+        const dataObjectUrl = URL.createObjectURL(new Blob([dataBuffer], { type: 'application/octet-stream' }));
+        const wasmObjectUrl = URL.createObjectURL(new Blob([wasmBuffer], { type: 'application/wasm' }));
+        setBar(94);
 
         document.getElementById('loading-overlay').classList.add('hidden');
 
-        createUnityInstance(document.querySelector('#unity-canvas'), {
-          dataUrl:            cdnUrl('cgh webgl.data'),
-          frameworkUrl:       cdnUrl('cgh webgl.framework.js'),
-          codeUrl:            cdnUrl('cgh webgl.wasm'),
-          streamingAssetsUrl: cdnUrl('StreamingAssets'),
+        await createUnityInstance(document.querySelector('#unity-canvas'), {
+          dataUrl:            dataObjectUrl,
+          frameworkUrl:       `${CDN_BASE}/cgh webgl.framework.js`,
+          codeUrl:            wasmObjectUrl,
+          streamingAssetsUrl: `${CDN_BASE.replace('/Build', '')}/StreamingAssets`,
           companyName:        'Luminositcal',
           productName:        'GTH (CLOUD EDITION)',
           productVersion:     '11.0.0',
+        }, (progress) => {
+          setText('LOADING... ' + Math.round(progress * 100) + '%');
         });
+
+        setBar(100);
+        URL.revokeObjectURL(dataObjectUrl);
+        URL.revokeObjectURL(wasmObjectUrl);
       }
 
       if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
@@ -300,7 +280,7 @@
       }
 
       boot().catch(err => {
-        document.getElementById('loading-text').textContent = 'ERROR: ' + err.message;
+        setText('ERROR: ' + err.message);
         console.error(err);
       });
 
