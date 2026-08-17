@@ -49,6 +49,105 @@
         font-size: 13px;
         color: #aaa;
       }
+
+      /* ---------- Mobile touch controls ---------- */
+      #mobile-controls {
+        position: fixed;
+        inset: 0;
+        z-index: 500;
+        display: none;
+        touch-action: none;
+        pointer-events: none;
+        -webkit-user-select: none;
+        user-select: none;
+      }
+      #mobile-controls.active { display: block; }
+
+      #look-layer {
+        position: absolute;
+        inset: 0;
+        pointer-events: auto;
+        touch-action: none;
+      }
+
+      #joystick-zone {
+        position: absolute;
+        left: 24px;
+        bottom: 24px;
+        width: 140px;
+        height: 140px;
+        pointer-events: auto;
+        touch-action: none;
+      }
+      #joystick-base {
+        position: absolute;
+        inset: 0;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.10);
+        border: 2px solid rgba(255, 255, 255, 0.25);
+      }
+      #joystick-stick {
+        position: absolute;
+        width: 56px;
+        height: 56px;
+        left: 42px;
+        top: 42px;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.45);
+        border: 2px solid rgba(255, 255, 255, 0.6);
+        transform: translate(0, 0);
+        transition: transform 0.05s linear;
+      }
+
+      #action-buttons {
+        position: absolute;
+        right: 24px;
+        bottom: 24px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 14px;
+        pointer-events: auto;
+      }
+      .mobile-btn {
+        width: 84px;
+        height: 84px;
+        border-radius: 50%;
+        border: 2px solid rgba(255, 255, 255, 0.35);
+        background: rgba(224, 64, 64, 0.35);
+        color: #fff;
+        font-family: monospace;
+        font-size: 13px;
+        font-weight: bold;
+        letter-spacing: 0.5px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        touch-action: none;
+        pointer-events: auto;
+      }
+      .mobile-btn.pressed {
+        background: rgba(224, 64, 64, 0.65);
+        border-color: rgba(255, 255, 255, 0.7);
+      }
+      #jump-btn { width: 96px; height: 96px; font-size: 14px; }
+      #sprint-btn { width: 76px; height: 76px; font-size: 12px; }
+
+      #mobile-tap-hint {
+        position: fixed;
+        inset: 0;
+        z-index: 400;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        color: #fff;
+        font-family: monospace;
+        font-size: 15px;
+        background: rgba(0,0,0,0.35);
+        text-align: center;
+        padding: 20px;
+      }
+      #mobile-tap-hint.active { display: flex; }
     </style>
   </head>
   <body>
@@ -59,6 +158,21 @@
     </div>
 
     <canvas id="unity-canvas"></canvas>
+
+    <div id="mobile-tap-hint">Tap anywhere to enable touch controls</div>
+
+    <div id="mobile-controls">
+      <div id="look-layer"></div>
+      <div id="joystick-zone">
+        <div id="joystick-base">
+          <div id="joystick-stick"></div>
+        </div>
+      </div>
+      <div id="action-buttons">
+        <button id="sprint-btn" class="mobile-btn">SPRINT</button>
+        <button id="jump-btn" class="mobile-btn">JUMP</button>
+      </div>
+    </div>
 
     <script>
       if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
@@ -215,6 +329,184 @@
           setStatus(err.message);
           console.error(err);
         }
+      })();
+
+
+      // ---------- Mobile touch controls ----------
+      (() => {
+        const isTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+        if (!isTouch) return;
+
+        const controls   = document.getElementById('mobile-controls');
+        const tapHint     = document.getElementById('mobile-tap-hint');
+        const lookLayer   = document.getElementById('look-layer');
+        const joyZone     = document.getElementById('joystick-zone');
+        const joyBase     = document.getElementById('joystick-base');
+        const joyStick    = document.getElementById('joystick-stick');
+        const jumpBtn     = document.getElementById('jump-btn');
+        const sprintBtn   = document.getElementById('sprint-btn');
+
+        tapHint.classList.add('active');
+
+        function sendKey(type, code, key) {
+          const evt = new KeyboardEvent(type, {
+            code, key,
+            keyCode: keyCodeFor(code),
+            which:   keyCodeFor(code),
+            bubbles: true,
+            cancelable: true,
+          });
+          window.dispatchEvent(evt);
+          document.dispatchEvent(evt);
+        }
+        function keyCodeFor(code) {
+          const map = {
+            KeyW: 87, KeyA: 65, KeyS: 83, KeyD: 68,
+            Space: 32, ShiftLeft: 16,
+            ArrowUp: 38, ArrowDown: 40, ArrowLeft: 37, ArrowRight: 39,
+          };
+          return map[code] || 0;
+        }
+
+        // -------- Joystick: WASD --------
+        const heldMoveKeys = new Set();
+        function setMoveKeys(next) {
+          for (const k of heldMoveKeys) if (!next.has(k)) sendKey('keyup', k, k[3].toLowerCase());
+          for (const k of next) if (!heldMoveKeys.has(k)) sendKey('keydown', k, k[3].toLowerCase());
+          heldMoveKeys.clear();
+          for (const k of next) heldMoveKeys.add(k);
+        }
+
+        let joyPointerId = null;
+        const JOY_RADIUS = 56;
+        const JOY_DEADZONE = 10;
+
+        function joyDirectionsFromAngle(dx, dy) {
+          const dist = Math.hypot(dx, dy);
+          if (dist < JOY_DEADZONE) return new Set();
+          const deg = Math.atan2(-dy, dx) * (180 / Math.PI); // 0=right, 90=up
+          const dirs = new Set();
+          if (deg > -22.5 && deg <= 22.5)       dirs.add('KeyD');
+          else if (deg > 22.5 && deg <= 67.5)   { dirs.add('KeyW'); dirs.add('KeyD'); }
+          else if (deg > 67.5 && deg <= 112.5)  dirs.add('KeyW');
+          else if (deg > 112.5 && deg <= 157.5) { dirs.add('KeyW'); dirs.add('KeyA'); }
+          else if (deg > 157.5 || deg <= -157.5) dirs.add('KeyA');
+          else if (deg > -157.5 && deg <= -112.5) { dirs.add('KeyS'); dirs.add('KeyA'); }
+          else if (deg > -112.5 && deg <= -67.5) dirs.add('KeyS');
+          else if (deg > -67.5 && deg <= -22.5)  { dirs.add('KeyS'); dirs.add('KeyD'); }
+          return dirs;
+        }
+
+        function updateJoystick(clientX, clientY) {
+          const rect = joyBase.getBoundingClientRect();
+          const cx = rect.left + rect.width / 2;
+          const cy = rect.top + rect.height / 2;
+          let dx = clientX - cx;
+          let dy = clientY - cy;
+          const dist = Math.min(Math.hypot(dx, dy), JOY_RADIUS);
+          const angle = Math.atan2(dy, dx);
+          const sx = Math.cos(angle) * dist;
+          const sy = Math.sin(angle) * dist;
+          joyStick.style.transform = `translate(${sx}px, ${sy}px)`;
+          setMoveKeys(joyDirectionsFromAngle(dx, dy));
+        }
+        function resetJoystick() {
+          joyStick.style.transform = 'translate(0px, 0px)';
+          setMoveKeys(new Set());
+        }
+
+        joyZone.addEventListener('pointerdown', (e) => {
+          if (joyPointerId !== null) return;
+          joyPointerId = e.pointerId;
+          joyZone.setPointerCapture(e.pointerId);
+          updateJoystick(e.clientX, e.clientY);
+          e.preventDefault();
+        }, { passive: false });
+        joyZone.addEventListener('pointermove', (e) => {
+          if (e.pointerId !== joyPointerId) return;
+          updateJoystick(e.clientX, e.clientY);
+          e.preventDefault();
+        }, { passive: false });
+        function endJoystick(e) {
+          if (e.pointerId !== joyPointerId) return;
+          joyPointerId = null;
+          resetJoystick();
+        }
+        joyZone.addEventListener('pointerup', endJoystick);
+        joyZone.addEventListener('pointercancel', endJoystick);
+
+        // -------- Jump / Sprint buttons --------
+        function bindHoldButton(el, code, key) {
+          let pid = null;
+          el.addEventListener('pointerdown', (e) => {
+            if (pid !== null) return;
+            pid = e.pointerId;
+            el.setPointerCapture(e.pointerId);
+            el.classList.add('pressed');
+            sendKey('keydown', code, key);
+            e.preventDefault();
+          }, { passive: false });
+          function release(e) {
+            if (e.pointerId !== pid) return;
+            pid = null;
+            el.classList.remove('pressed');
+            sendKey('keyup', code, key);
+          }
+          el.addEventListener('pointerup', release);
+          el.addEventListener('pointercancel', release);
+        }
+        bindHoldButton(jumpBtn, 'Space', ' ');
+        bindHoldButton(sprintBtn, 'ShiftLeft', 'Shift');
+
+        // -------- Swipe look: pulses of arrow keys --------
+        let lookPointerId = null;
+        let lastX = 0, lastY = 0;
+        const LOOK_PULSE_PX = 8;
+
+        function pulseKey(code, key) {
+          sendKey('keydown', code, key);
+          setTimeout(() => sendKey('keyup', code, key), 16);
+        }
+
+        lookLayer.addEventListener('pointerdown', (e) => {
+          if (lookPointerId !== null) return;
+          lookPointerId = e.pointerId;
+          lastX = e.clientX;
+          lastY = e.clientY;
+          lookLayer.setPointerCapture(e.pointerId);
+          e.preventDefault();
+        }, { passive: false });
+
+        lookLayer.addEventListener('pointermove', (e) => {
+          if (e.pointerId !== lookPointerId) return;
+          const dx = e.clientX - lastX;
+          const dy = e.clientY - lastY;
+          if (Math.abs(dx) >= LOOK_PULSE_PX || Math.abs(dy) >= LOOK_PULSE_PX) {
+            if (Math.abs(dx) > Math.abs(dy)) {
+              pulseKey(dx > 0 ? 'ArrowRight' : 'ArrowLeft', dx > 0 ? 'ArrowRight' : 'ArrowLeft');
+            } else {
+              pulseKey(dy > 0 ? 'ArrowDown' : 'ArrowUp', dy > 0 ? 'ArrowDown' : 'ArrowUp');
+            }
+            lastX = e.clientX;
+            lastY = e.clientY;
+          }
+          e.preventDefault();
+        }, { passive: false });
+
+        function endLook(e) {
+          if (e.pointerId !== lookPointerId) return;
+          lookPointerId = null;
+        }
+        lookLayer.addEventListener('pointerup', endLook);
+        lookLayer.addEventListener('pointercancel', endLook);
+
+        // -------- Reveal controls on first tap --------
+        function revealControls(e) {
+          controls.classList.add('active');
+          tapHint.classList.remove('active');
+          document.removeEventListener('pointerdown', revealControls, true);
+        }
+        document.addEventListener('pointerdown', revealControls, true);
       })();
     </script>
   </body>
