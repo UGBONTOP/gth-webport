@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en-us">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <title>GTH Webported: OG</title>
+    <link rel="shortcut icon" href="https://cdn.jsdelivr.net/gh/UGBONTOP/Gorilla-Tag-Horror-Webported@main/TemplateData/favicon.ico">
+    <style>
+      * { margin: 0; padding: 0; }
+      body { background: #231f20; }
+      #unity-container { position: relative; }
+      #unity-container.unity-desktop { left: 50%; top: 50%; transform: translate(-50%, -50%); position: absolute; }
+      #unity-canvas { background: #231f20; }
+      #unity-loading-bar { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); display: none; }
+      #unity-logo { width: 154px; height: 130px; background: url('https://cdn.jsdelivr.net/gh/UGBONTOP/Gorilla-Tag-Horror-Webported@main/TemplateData/unity-logo.png') no-repeat center; }
+      #unity-progress-bar-empty { width: 141px; height: 18px; margin-top: 10px; background: url('https://cdn.jsdelivr.net/gh/UGBONTOP/Gorilla-Tag-Horror-Webported@main/TemplateData/progress-bar-empty-light.png') no-repeat center; }
+      #unity-progress-bar-full  { width: 0%;   height: 18px; background: url('https://cdn.jsdelivr.net/gh/UGBONTOP/Gorilla-Tag-Horror-Webported@main/TemplateData/progress-bar-full-light.png') no-repeat center; }
+      #unity-footer { position: relative; }
+      #unity-webgl-logo { float: left; width: 204px; height: 38px; background: url('https://cdn.jsdelivr.net/gh/UGBONTOP/Gorilla-Tag-Horror-Webported@main/TemplateData/webgl-logo.png') no-repeat center; }
+      #unity-build-title { float: right; margin-right: 10px; line-height: 38px; font-family: arial; font-size: 18px; color: white; }
+      #unity-fullscreen-button { float: right; width: 38px; height: 38px; background: url('https://cdn.jsdelivr.net/gh/UGBONTOP/Gorilla-Tag-Horror-Webported@main/TemplateData/fullscreen-button.png') no-repeat center; cursor: pointer; }
+      #unity-warning { position: absolute; left: 50%; top: 5%; transform: translate(-50%); background: white; padding: 10px; display: none; }
+    </style>
+  </head>
+  <body>
+    <div id="unity-container" class="unity-desktop">
+      <canvas id="unity-canvas" width=960 height=600></canvas>
+      <div id="unity-loading-bar">
+        <div id="unity-logo"></div>
+        <div id="unity-progress-bar-empty">
+          <div id="unity-progress-bar-full"></div>
+        </div>
+      </div>
+      <div id="unity-warning"> </div>
+      <div id="unity-footer">
+        <div id="unity-webgl-logo"></div>
+        <div id="unity-fullscreen-button"></div>
+        <div id="unity-build-title">Gorilla Tag Horror Revived</div>
+      </div>
+    </div>
+
+    <script>
+      var CDN = "https://cdn.jsdelivr.net/gh/UGBONTOP/Gorilla-Tag-Horror-Webported@main/Build/";
+
+      (function () {
+
+        var wasmParts = [
+          CDN + "wasm/newport%20fixes.part1",
+          CDN + "wasm/newport%20fixes.part2",
+          CDN + "wasm/newport%20fixes.part3"
+        ];
+
+        var dataParts = (function () {
+          var p = [];
+          for (var i = 1; i <= 20; i++) {
+            p.push(CDN + "data/newport%20fixes.part" + (i < 10 ? "0" + i : i));
+          }
+          return p;
+        })();
+
+        var PARTS = {
+          "newport fixes.wasm": { parts: wasmParts, mime: "application/wasm"          },
+          "newport fixes.data": { parts: dataParts, mime: "application/octet-stream"  }
+        };
+
+        var _cache = {};
+
+        function getFilename(url) {
+          try {
+            var seg = decodeURIComponent(new URL(url, location.href).pathname).split("/").pop();
+            return seg;
+          } catch (e) {
+            return decodeURIComponent(url.split("/").pop().split("?")[0]);
+          }
+        }
+
+        function assemble(filename) {
+          if (_cache[filename]) return _cache[filename];
+          var entry = PARTS[filename];
+          _cache[filename] = Promise.all(
+            entry.parts.map(function (partUrl) {
+              return fetch(partUrl).then(function (r) {
+                if (!r.ok) throw new Error("Part failed: " + partUrl + " (" + r.status + ")");
+                return r.arrayBuffer();
+              });
+            })
+          ).then(function (buffers) {
+            var total = buffers.reduce(function (s, b) { return s + b.byteLength; }, 0);
+            var out   = new Uint8Array(total);
+            var off   = 0;
+            buffers.forEach(function (b) { out.set(new Uint8Array(b), off); off += b.byteLength; });
+            var blob    = new Blob([out.buffer], { type: entry.mime });
+            var blobUrl = URL.createObjectURL(blob);
+            console.log("[PartLoader] Assembled '" + filename + "' — " + (total / 1048576).toFixed(1) + " MB");
+            return { buffer: out.buffer, blobUrl: blobUrl };
+          });
+          return _cache[filename];
+        }
+
+        function matchEntry(url) {
+          if (!url) return null;
+          var name = getFilename(url);
+          return PARTS[name] ? name : null;
+        }
+
+        var _origFetch = window.fetch.bind(window);
+        window.fetch = function (input, init) {
+          var url  = typeof input === "string" ? input : (input && input.url) || "";
+          var name = matchEntry(url);
+          if (name) {
+            console.log("[PartLoader] fetch intercepted:", url);
+            return assemble(name).then(function (r) { return _origFetch(r.blobUrl, init); });
+          }
+          return _origFetch(input, init);
+        };
+
+        var _XHROpen = XMLHttpRequest.prototype.open;
+        var _XHRSend = XMLHttpRequest.prototype.send;
+
+        XMLHttpRequest.prototype.open = function (method, url) {
+          this._patchedUrl  = url;
+          this._patchedName = matchEntry(url || "");
+          _XHROpen.apply(this, arguments);
+        };
+
+        XMLHttpRequest.prototype.send = function (body) {
+          var xhr  = this;
+          var name = xhr._patchedName;
+          if (name) {
+            console.log("[PartLoader] XHR intercepted:", xhr._patchedUrl);
+            assemble(name).then(function (r) {
+              _XHROpen.call(xhr, "GET", r.blobUrl, true);
+              _XHRSend.call(xhr, null);
+            }).catch(function (err) {
+              console.error("[PartLoader] XHR assembly error:", err);
+              xhr.dispatchEvent(new ProgressEvent("error"));
+            });
+            return;
+          }
+          _XHRSend.apply(this, arguments);
+        };
+
+        var _origInstStream = WebAssembly.instantiateStreaming.bind(WebAssembly);
+        var _origCompStream = WebAssembly.compileStreaming.bind(WebAssembly);
+
+        function resolveSource(source) {
+          return Promise.resolve(source).then(function (resp) {
+            var name = matchEntry(resp.url || "");
+            if (!name) return resp;
+            console.log("[PartLoader] WebAssembly streaming intercepted:", resp.url);
+            return assemble(name).then(function (r) {
+              return new Response(r.buffer, {
+                status: 200,
+                headers: { "Content-Type": "application/wasm" }
+              });
+            });
+          });
+        }
+
+        WebAssembly.instantiateStreaming = function (source, importObject) {
+          return resolveSource(source).then(function (resp) {
+            return _origInstStream(resp, importObject).catch(function () {
+              return resp.arrayBuffer().then(function (buf) {
+                return WebAssembly.instantiate(buf, importObject);
+              });
+            });
+          });
+        };
+
+        WebAssembly.compileStreaming = function (source) {
+          return resolveSource(source).then(function (resp) {
+            return _origCompStream(resp).catch(function () {
+              return resp.arrayBuffer().then(function (buf) {
+                return WebAssembly.compile(buf);
+              });
+            });
+          });
+        };
+
+        Object.keys(PARTS).forEach(function (name) { assemble(name); });
+
+        console.log("[PartLoader] Interceptors active + pre-warm started.");
+      })();
+    </script>
+
+    <script>
+      var container        = document.querySelector("#unity-container");
+      var canvas           = document.querySelector("#unity-canvas");
+      var loadingBar       = document.querySelector("#unity-loading-bar");
+      var progressBarFull  = document.querySelector("#unity-progress-bar-full");
+      var fullscreenButton = document.querySelector("#unity-fullscreen-button");
+      var warningBanner    = document.querySelector("#unity-warning");
+
+      function unityShowBanner(msg, type) {
+        function updateBannerVisibility() {
+          warningBanner.style.display = warningBanner.children.length ? 'block' : 'none';
+        }
+        var div = document.createElement('div');
+        div.innerHTML = msg;
+        warningBanner.appendChild(div);
+        if (type == 'error') {
+          div.style = 'background: red; padding: 10px;';
+        } else {
+          if (type == 'warning') div.style = 'background: yellow; padding: 10px;';
+          setTimeout(function () {
+            warningBanner.removeChild(div);
+            updateBannerVisibility();
+          }, 5000);
+        }
+        updateBannerVisibility();
+      }
+
+      var config = {
+        dataUrl:            CDN + "newport fixes.data",
+        frameworkUrl:       CDN + "newport fixes.framework.js",
+        codeUrl:            CDN + "newport fixes.wasm",
+        streamingAssetsUrl: CDN.replace(/Build\/$/, "StreamingAssets"),
+        companyName:        "Pinky vr",
+        productName:        "Gorilla Tag Horror Revived",
+        productVersion:     "11.0.0",
+        showBanner:         unityShowBanner,
+      };
+
+      if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+        var meta = document.createElement('meta');
+        meta.name    = 'viewport';
+        meta.content = 'width=device-width, height=device-height, initial-scale=1.0, user-scalable=no, shrink-to-fit=yes';
+        document.getElementsByTagName('head')[0].appendChild(meta);
+        container.className = "unity-mobile";
+        canvas.className    = "unity-mobile";
+        unityShowBanner('WebGL builds are not supported on mobile devices.');
+      } else {
+        canvas.style.width  = "960px";
+        canvas.style.height = "600px";
+      }
+
+      loadingBar.style.display = "block";
+
+      var script    = document.createElement("script");
+      script.src    = CDN + "newport%20fixes.loader.js";
+      script.onload = function () {
+        createUnityInstance(canvas, config, function (progress) {
+          progressBarFull.style.width = 100 * progress + "%";
+        }).then(function (unityInstance) {
+          loadingBar.style.display = "none";
+          fullscreenButton.onclick = function () {
+            unityInstance.SetFullscreen(1);
+          };
+        }).catch(function (message) {
+          alert(message);
+        });
+      };
+      document.body.appendChild(script);
+    </script>
+  </body>
+</html>

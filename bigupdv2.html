@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en-us">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <title>CGH Webported: 4th of July</title>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body {
+        width: 100%; height: 100%;
+        overflow: hidden;
+        background: #231F20;
+      }
+      #unity-canvas {
+        display: block;
+        width: 100vw;
+        height: 100vh;
+        background: #231F20;
+      }
+      #loading-overlay {
+        position: fixed;
+        inset: 0;
+        background: #231F20;
+        color: #fff;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        font-family: monospace;
+        font-size: 16px;
+        z-index: 9999;
+        gap: 16px;
+      }
+      #loading-bar-outer {
+        width: 360px;
+        height: 12px;
+        background: #444;
+        border-radius: 6px;
+        overflow: hidden;
+      }
+      #loading-bar-inner {
+        height: 100%;
+        width: 0%;
+        background: #e04040;
+        border-radius: 6px;
+        transition: width 0.2s ease;
+      }
+      #loading-status {
+        font-size: 13px;
+        color: #aaa;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="loading-overlay">
+      <div id="loading-label">Loading game files...</div>
+      <div id="loading-bar-outer"><div id="loading-bar-inner"></div></div>
+      <div id="loading-status">Preparing...</div>
+    </div>
+
+    <canvas id="unity-canvas"></canvas>
+
+    <script>
+      if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+        var meta = document.createElement('meta');
+        meta.name = 'viewport';
+        meta.content = 'width=device-width, height=device-height, initial-scale=1.0, user-scalable=no, shrink-to-fit=yes';
+        document.getElementsByTagName('head')[0].appendChild(meta);
+      }
+
+
+      const LOADER_URL = 'https://cdn.jsdelivr.net/gh/UGBONTOP/CBUPV2Webport@main/Build/cgh%20big%20update%20v2.loader.js';
+
+      const FRAMEWORK_URL = 'https://cdn.jsdelivr.net/gh/UGBONTOP/CBUPV2Webport@main/Build/cgh%20big%20update%20v2.framework.js';
+
+      const DATA_PARTS = [
+        'https://cdn.jsdelivr.net/gh/UGBONTOP/CBUPV2Webport@main/Build/data/cgh%20big%20update%20v2.part01',
+        'https://cdn.jsdelivr.net/gh/UGBONTOP/CBUPV2Webport@main/Build/data/cgh%20big%20update%20v2.part02',
+        'https://cdn.jsdelivr.net/gh/UGBONTOP/CBUPV2Webport@main/Build/data/cgh%20big%20update%20v2.part03',
+        'https://cdn.jsdelivr.net/gh/UGBONTOP/CBUPV2Webport@main/Build/data/cgh%20big%20update%20v2.part04',
+        'https://cdn.jsdelivr.net/gh/UGBONTOP/CBUPV2Webport@main/Build/data/cgh%20big%20update%20v2.part05',
+        'https://cdn.jsdelivr.net/gh/UGBONTOP/CBUPV2Webport@main/Build/data/cgh%20big%20update%20v2.part06',
+        'https://cdn.jsdelivr.net/gh/UGBONTOP/CBUPV2Webport@main/Build/data/cgh%20big%20update%20v2.part07',
+        'https://cdn.jsdelivr.net/gh/UGBONTOP/CBUPV2Webport@main/Build/data/cgh%20big%20update%20v2.part08',
+        'https://cdn.jsdelivr.net/gh/UGBONTOP/CBUPV2Webport@main/Build/data/cgh%20big%20update%20v2.part09',
+        'https://cdn.jsdelivr.net/gh/UGBONTOP/CBUPV2Webport@main/Build/data/cgh%20big%20update%20v2.part10',
+        'https://cdn.jsdelivr.net/gh/UGBONTOP/CBUPV2Webport@main/Build/data/cgh%20big%20update%20v2.part11',
+        'https://cdn.jsdelivr.net/gh/UGBONTOP/CBUPV2Webport@main/Build/data/cgh%20big%20update%20v2.part12',
+        'https://cdn.jsdelivr.net/gh/UGBONTOP/CBUPV2Webport@main/Build/data/cgh%20big%20update%20v2.part13',
+        'https://cdn.jsdelivr.net/gh/UGBONTOP/CBUPV2Webport@main/Build/data/cgh%20big%20update%20v2.part14',
+        'https://cdn.jsdelivr.net/gh/UGBONTOP/CBUPV2Webport@main/Build/data/cgh%20big%20update%20v2.part15',
+        'https://cdn.jsdelivr.net/gh/UGBONTOP/CBUPV2Webport@main/Build/data/cgh%20big%20update%20v2.part16',
+        'https://cdn.jsdelivr.net/gh/UGBONTOP/CBUPV2Webport@main/Build/data/cgh%20big%20update%20v2.part17',
+        'https://cdn.jsdelivr.net/gh/UGBONTOP/CBUPV2Webport@main/Build/data/cgh%20big%20update%20v2.part18',
+        'https://cdn.jsdelivr.net/gh/UGBONTOP/CBUPV2Webport@main/Build/data/cgh%20big%20update%20v2.part19',
+        'https://cdn.jsdelivr.net/gh/UGBONTOP/CBUPV2Webport@main/Build/data/cgh%20big%20update%20v2.part20',
+        'https://cdn.jsdelivr.net/gh/UGBONTOP/CBUPV2Webport@main/Build/data/cgh%20big%20update%20v2.part21',
+        'https://cdn.jsdelivr.net/gh/UGBONTOP/CBUPV2Webport@main/Build/data/cgh%20big%20update%20v2.part22',
+        'https://cdn.jsdelivr.net/gh/UGBONTOP/CBUPV2Webport@main/Build/data/cgh%20big%20update%20v2.part23',
+        'https://cdn.jsdelivr.net/gh/UGBONTOP/CBUPV2Webport@main/Build/data/cgh%20big%20update%20v2.part24',
+        'https://cdn.jsdelivr.net/gh/UGBONTOP/CBUPV2Webport@main/Build/data/cgh%20big%20update%20v2.part25',
+        'https://cdn.jsdelivr.net/gh/UGBONTOP/CBUPV2Webport@main/Build/data/cgh%20big%20update%20v2.part26',
+        'https://cdn.jsdelivr.net/gh/UGBONTOP/CBUPV2Webport@main/Build/data/cgh%20big%20update%20v2.part27',
+        'https://cdn.jsdelivr.net/gh/UGBONTOP/CBUPV2Webport@main/Build/data/cgh%20big%20update%20v2.part28',
+        'https://cdn.jsdelivr.net/gh/UGBONTOP/CBUPV2Webport@main/Build/data/cgh%20big%20update%20v2.part29',
+        'https://cdn.jsdelivr.net/gh/UGBONTOP/CBUPV2Webport@main/Build/data/cgh%20big%20update%20v2.part30',
+        'https://cdn.jsdelivr.net/gh/UGBONTOP/CBUPV2Webport@main/Build/data/cgh%20big%20update%20v2.part31',
+        'https://cdn.jsdelivr.net/gh/UGBONTOP/CBUPV2Webport@main/Build/data/cgh%20big%20update%20v2.part32',
+        'https://cdn.jsdelivr.net/gh/UGBONTOP/CBUPV2Webport@main/Build/data/cgh%20big%20update%20v2.part33',
+        'https://cdn.jsdelivr.net/gh/UGBONTOP/CBUPV2Webport@main/Build/data/cgh%20big%20update%20v2.part34',
+        'https://cdn.jsdelivr.net/gh/UGBONTOP/CBUPV2Webport@main/Build/data/cgh%20big%20update%20v2.part35',
+        'https://cdn.jsdelivr.net/gh/UGBONTOP/CBUPV2Webport@main/Build/data/cgh%20big%20update%20v2.part36',
+        'https://cdn.jsdelivr.net/gh/UGBONTOP/CBUPV2Webport@main/Build/data/cgh%20big%20update%20v2.part37',
+        'https://cdn.jsdelivr.net/gh/UGBONTOP/CBUPV2Webport@main/Build/data/cgh%20big%20update%20v2.part38',
+        'https://cdn.jsdelivr.net/gh/UGBONTOP/CBUPV2Webport@main/Build/data/cgh%20big%20update%20v2.part39',
+        'https://cdn.jsdelivr.net/gh/UGBONTOP/CBUPV2Webport@main/Build/data/cgh%20big%20update%20v2.part40',
+        'https://cdn.jsdelivr.net/gh/UGBONTOP/CBUPV2Webport@main/Build/data/cgh%20big%20update%20v2.part41',
+        'https://cdn.jsdelivr.net/gh/UGBONTOP/CBUPV2Webport@main/Build/data/cgh%20big%20update%20v2.part42',
+        'https://cdn.jsdelivr.net/gh/UGBONTOP/CBUPV2Webport@main/Build/data/cgh%20big%20update%20v2.part43',
+        'https://cdn.jsdelivr.net/gh/UGBONTOP/CBUPV2Webport@main/Build/data/cgh%20big%20update%20v2.part44',
+        'https://cdn.jsdelivr.net/gh/UGBONTOP/CBUPV2Webport@main/Build/data/cgh%20big%20update%20v2.part45',
+        'https://cdn.jsdelivr.net/gh/UGBONTOP/CBUPV2Webport@main/Build/data/cgh%20big%20update%20v2.part46',
+      ];
+
+      const WASM_PARTS = [
+        'https://cdn.jsdelivr.net/gh/UGBONTOP/CBUPV2Webport@main/Build/wasm/cgh%20big%20update%20v2.part1',
+        'https://cdn.jsdelivr.net/gh/UGBONTOP/CBUPV2Webport@main/Build/wasm/cgh%20big%20update%20v2.part2',
+      ];
+
+
+      function setBar(pct) {
+        document.getElementById('loading-bar-inner').style.width = Math.min(100, pct).toFixed(1) + '%';
+      }
+      function setStatus(msg) { document.getElementById('loading-status').textContent = msg; }
+      function setLabel(msg)  { document.getElementById('loading-label').textContent  = msg; }
+
+      async function fetchPart(url) {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error('HTTP ' + res.status + ' — ' + url);
+        return res.arrayBuffer();
+      }
+
+      async function fetchAndCombine(urls, label, barStart, barEnd) {
+        const buffers = [];
+        for (let i = 0; i < urls.length; i++) {
+          setStatus('Downloading ' + label + ' part ' + (i + 1) + ' / ' + urls.length);
+          buffers.push(await fetchPart(urls[i]));
+          setBar(barStart + (barEnd - barStart) * ((i + 1) / urls.length));
+        }
+        const totalBytes = buffers.reduce((s, b) => s + b.byteLength, 0);
+        const out = new Uint8Array(totalBytes);
+        let off = 0;
+        for (const b of buffers) { out.set(new Uint8Array(b), off); off += b.byteLength; }
+        return out.buffer;
+      }
+
+      function loadScript(url) {
+        return new Promise((resolve, reject) => {
+          const s = document.createElement('script');
+          s.src = url;
+          s.onload  = resolve;
+          s.onerror = () => reject(new Error('Script load failed: ' + url));
+          document.head.appendChild(s);
+        });
+      }
+
+
+      (async () => {
+        try {
+          setLabel('Loading engine...');
+          setStatus('Fetching loader script...');
+          await loadScript(LOADER_URL);
+          setBar(2);
+
+          setLabel('Loading .data (this may take a while)...');
+          const dataBuffer = await fetchAndCombine(DATA_PARTS, 'DATA', 2, 65);
+
+          setLabel('Loading .wasm...');
+          const wasmBuffer = await fetchAndCombine(WASM_PARTS, 'WASM', 65, 90);
+
+          setLabel('Starting game...');
+          setStatus('Preparing blobs...');
+          setBar(91);
+
+          const dataObjectUrl = URL.createObjectURL(new Blob([dataBuffer]));
+          const wasmObjectUrl = URL.createObjectURL(new Blob([wasmBuffer], { type: 'application/wasm' }));
+
+          setStatus('Initialising Unity...');
+          setBar(93);
+
+          await createUnityInstance(document.querySelector('#unity-canvas'), {
+            dataUrl:            dataObjectUrl,
+            frameworkUrl:       FRAMEWORK_URL,
+            codeUrl:            wasmObjectUrl,
+            streamingAssetsUrl: 'https://cdn.jsdelivr.net/gh/UGBONTOP/CBUPV2Webport@main/StreamingAssets',
+            companyName:        'KitKat_NotAWoman',
+            productName:        'GORILLA TAG HORROR CLOUD EDITION (BIG UPDATE V2)',
+            productVersion:     '1.1.15',
+          }, (progress) => {
+            setBar(93 + progress * 7);
+            setStatus('Unity loading: ' + Math.round(progress * 100) + '%');
+          });
+
+          setBar(100);
+          const overlay = document.getElementById('loading-overlay');
+          overlay.style.transition = 'opacity 0.6s';
+          overlay.style.opacity = '0';
+          setTimeout(() => overlay.remove(), 700);
+
+          URL.revokeObjectURL(dataObjectUrl);
+          URL.revokeObjectURL(wasmObjectUrl);
+
+        } catch (err) {
+          setLabel('Failed to load game');
+          setStatus(err.message);
+          console.error(err);
+        }
+      })();
+    </script>
+  </body>
+</html>

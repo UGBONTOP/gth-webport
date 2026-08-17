@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en-us">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <title>Prims Webported CGH: 4th of July 2024</title>
+    <style>
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+
+      html, body {
+        width: 100%;
+        height: 100%;
+        background: #231F20;
+        overflow: hidden;
+      }
+
+      body {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      #game-wrapper {
+        position: relative;
+        width: 960px;
+        height: 600px;
+        transform-origin: center center;
+        flex-shrink: 0;
+      }
+
+      #unity-canvas {
+        width: 960px;
+        height: 600px;
+        background: #231F20;
+        display: block;
+      }
+
+      /* Fullscreen button */
+      #fullscreen-btn {
+        position: absolute;
+        bottom: 10px;
+        right: 10px;
+        width: 36px;
+        height: 36px;
+        background: rgba(0, 0, 0, 0.55);
+        border: 1.5px solid rgba(255,255,255,0.25);
+        border-radius: 6px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: background 0.15s, opacity 0.2s;
+        z-index: 10;
+        opacity: 0.7;
+      }
+      #fullscreen-btn:hover { background: rgba(0,0,0,0.85); opacity: 1; }
+      #fullscreen-btn svg { width: 18px; height: 18px; fill: #fff; }
+
+      /* Loading overlay */
+      #loading-overlay {
+        position: absolute;
+        inset: 0;
+        background: #231F20;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        z-index: 20;
+        color: #fff;
+        font-family: 'Courier New', monospace;
+        gap: 16px;
+      }
+      #loading-overlay.hidden { display: none; }
+
+      #loading-bar-bg {
+        width: 300px;
+        height: 6px;
+        background: rgba(255,255,255,0.12);
+        border-radius: 3px;
+        overflow: hidden;
+      }
+      #loading-bar-fill {
+        height: 100%;
+        width: 0%;
+        background: #e0e0e0;
+        border-radius: 3px;
+        transition: width 0.3s ease;
+      }
+      #loading-text {
+        font-size: 12px;
+        color: rgba(255,255,255,0.5);
+        letter-spacing: 0.08em;
+      }
+
+      /* Hide fullscreen button when in fullscreen */
+      :fullscreen #fullscreen-btn,
+      :-webkit-full-screen #fullscreen-btn,
+      :-moz-full-screen #fullscreen-btn {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="game-wrapper">
+      <canvas id="unity-canvas" width="960" height="600"></canvas>
+
+      <button id="fullscreen-btn" title="Fullscreen (F11)">
+        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path d="M3 3h6v2H5v4H3V3zm12 0h6v6h-2V5h-4V3zM3 15h2v4h4v2H3v-6zm16 4h-4v2h6v-6h-2v4z"/>
+        </svg>
+      </button>
+
+      <div id="loading-overlay">
+        <div id="loading-text">LOADING... 0%</div>
+        <div id="loading-bar-bg"><div id="loading-bar-fill"></div></div>
+      </div>
+    </div>
+
+    <script>
+    (function () {
+      // Base CDN path — everything under the game's Build folder is served from here.
+      // NOTE: jsDelivr's GitHub CDN format is user/repo@ref/path — no "tree" segment.
+      const CDN_BASE = 'https://cdn.jsdelivr.net/gh/UGBONTOP/randomhtmlstuffidfk@main/Build';
+
+      // Filenames contain literal spaces, which must be percent-encoded for a real HTTP fetch.
+      function cdnUrl(path, host) {
+        const base = host
+          ? CDN_BASE.replace('cdn.jsdelivr.net', host)
+          : CDN_BASE;
+        return encodeURI(`${base}/${path}`);
+      }
+
+      const DATA_PARTS  = 37; 
+      const WASM_PARTS  =  3; 
+
+      function dataPartUrl(i) {
+        const n = String(i).padStart(2, '0');
+        return cdnUrl(`data/cgh webgl.part${n}`);
+      }
+      function wasmPartUrl(i) {
+        // Part 2 is ~15MB and gets flaky 403s on the default combo CDN — pin it to the Fastly-only host.
+        const host = i === 2 ? 'fastly.jsdelivr.net' : undefined;
+        return cdnUrl(`wasm/cgh webgl.part${i}`, host);
+      }
+
+      const totalParts = DATA_PARTS + WASM_PARTS;
+      let completedParts = 0;
+      function onPartLoaded() {
+        completedParts++;
+        const pct = Math.round((completedParts / totalParts) * 100);
+        document.getElementById('loading-bar-fill').style.width = pct + '%';
+        document.getElementById('loading-text').textContent = `LOADING... ${pct}%`;
+      }
+
+      async function fetchParts(urls) {
+        const buffers = await Promise.all(urls.map(async url => {
+          const res = await fetch(url);
+          if (!res.ok) throw new Error(`Failed to fetch ${url}: ${res.status}`);
+          const buf = await res.arrayBuffer();
+          onPartLoaded();
+          return buf;
+        }));
+
+        const total = buffers.reduce((sum, b) => sum + b.byteLength, 0);
+        const merged = new Uint8Array(total);
+        let offset = 0;
+        for (const buf of buffers) {
+          merged.set(new Uint8Array(buf), offset);
+          offset += buf.byteLength;
+        }
+        return merged.buffer;
+      }
+
+      const dataUrls = Array.from({ length: DATA_PARTS }, (_, i) => dataPartUrl(i + 1));
+      const wasmUrls = Array.from({ length: WASM_PARTS }, (_, i) => wasmPartUrl(i + 1));
+
+      const cachedBlobs = {};
+
+      async function preloadAssets() {
+        const [dataBuf, wasmBuf] = await Promise.all([
+          fetchParts(dataUrls),
+          fetchParts(wasmUrls),
+        ]);
+
+        cachedBlobs['__data__'] = URL.createObjectURL(
+          new Blob([dataBuf], { type: 'application/octet-stream' })
+        );
+        cachedBlobs['__wasm__'] = URL.createObjectURL(
+          new Blob([wasmBuf], { type: 'application/wasm' })
+        );
+      }
+
+
+      const _origFetch = window.fetch.bind(window);
+      window.fetch = function (input, init) {
+        const url = typeof input === 'string' ? input : input.url || String(input);
+
+        if (url.includes('webgl.data') && cachedBlobs['__data__']) {
+          return _origFetch(cachedBlobs['__data__'], init);
+        }
+        if (url.includes('webgl.wasm') && cachedBlobs['__wasm__']) {
+          return _origFetch(cachedBlobs['__wasm__'], init);
+        }
+        return _origFetch(input, init);
+      };
+
+
+      const _XHROpen = XMLHttpRequest.prototype.open;
+      XMLHttpRequest.prototype.open = function (method, url, ...rest) {
+        let patchedUrl = url;
+        if (typeof url === 'string') {
+          if (url.includes('webgl.data') && cachedBlobs['__data__']) {
+            patchedUrl = cachedBlobs['__data__'];
+          } else if (url.includes('webgl.wasm') && cachedBlobs['__wasm__']) {
+            patchedUrl = cachedBlobs['__wasm__'];
+          }
+        }
+        return _XHROpen.call(this, method, patchedUrl, ...rest);
+      };
+
+
+      const GAME_ASPECT = 960 / 600;
+
+      function scaleGame() {
+        const canvas  = document.getElementById('unity-canvas');
+        const wrapper = document.getElementById('game-wrapper');
+        const fs = !!(
+          document.fullscreenElement ||
+          document.webkitFullscreenElement ||
+          document.mozFullScreenElement
+        );
+
+        let w, h;
+        if (fs) {
+          w = screen.width;
+          h = screen.height;
+        } else {
+          const vw = window.innerWidth;
+          const vh = window.innerHeight;
+          if (vw / vh > GAME_ASPECT) {
+            h = vh;
+            w = Math.round(h * GAME_ASPECT);
+          } else {
+            w = vw;
+            h = Math.round(w / GAME_ASPECT);
+          }
+        }
+
+        wrapper.style.width  = w + 'px';
+        wrapper.style.height = h + 'px';
+        wrapper.style.transform = '';
+
+
+        canvas.style.width  = w + 'px';
+        canvas.style.height = h + 'px';
+        canvas.width  = w;
+        canvas.height = h;
+      }
+
+      scaleGame();
+      window.addEventListener('resize', scaleGame);
+
+
+      async function boot() {
+        await new Promise((resolve, reject) => {
+          const s = document.createElement('script');
+          s.src = cdnUrl('cgh webgl.loader.js');
+          s.onload = resolve;
+          s.onerror = reject;
+          document.head.appendChild(s);
+        });
+
+
+        await preloadAssets();
+
+        document.getElementById('loading-overlay').classList.add('hidden');
+
+        createUnityInstance(document.querySelector('#unity-canvas'), {
+          dataUrl:            cdnUrl('cgh webgl.data'),
+          frameworkUrl:       cdnUrl('cgh webgl.framework.js'),
+          codeUrl:            cdnUrl('cgh webgl.wasm'),
+          streamingAssetsUrl: cdnUrl('StreamingAssets'),
+          companyName:        'Luminositcal',
+          productName:        'GTH (CLOUD EDITION)',
+          productVersion:     '11.0.0',
+        });
+      }
+
+      if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+        const meta = document.createElement('meta');
+        meta.name = 'viewport';
+        meta.content = 'width=device-width, height=device-height, initial-scale=1.0, user-scalable=no, shrink-to-fit=yes';
+        document.head.appendChild(meta);
+
+        const canvas = document.querySelector('#unity-canvas');
+        canvas.style.width  = '100%';
+        canvas.style.height = '100%';
+        canvas.style.position = 'fixed';
+        document.body.style.textAlign = 'left';
+      }
+
+      boot().catch(err => {
+        document.getElementById('loading-text').textContent = 'ERROR: ' + err.message;
+        console.error(err);
+      });
+
+      const wrapper = document.getElementById('game-wrapper');
+      const btn     = document.getElementById('fullscreen-btn');
+
+      function enterFullscreen() {
+        const el = wrapper;
+        if (el.requestFullscreen)            el.requestFullscreen();
+        else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+        else if (el.mozRequestFullScreen)    el.mozRequestFullScreen();
+      }
+
+      function exitFullscreen() {
+        if (document.exitFullscreen)            document.exitFullscreen();
+        else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+        else if (document.mozCancelFullScreen)  document.mozCancelFullScreen();
+      }
+
+      function isFullscreen() {
+        return !!(
+          document.fullscreenElement ||
+          document.webkitFullscreenElement ||
+          document.mozFullScreenElement
+        );
+      }
+
+      btn.addEventListener('click', () => {
+        isFullscreen() ? exitFullscreen() : enterFullscreen();
+      });
+
+      document.addEventListener('keydown', e => {
+        if (e.key === 'F11') {
+          e.preventDefault();
+          isFullscreen() ? exitFullscreen() : enterFullscreen();
+        }
+      });
+
+      function updateBtnIcon() {
+        if (isFullscreen()) {
+          btn.innerHTML = `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="width:18px;height:18px;fill:#fff">
+            <path d="M9 3H7v4H3v2h6V3zm6 0h-2v6h6V7h-4V3zM3 13v2h4v4h2v-6H3zm14 4v-4h-2v6h6v-2h-4z"/>
+          </svg>`;
+        } else {
+          btn.innerHTML = `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="width:18px;height:18px;fill:#fff">
+            <path d="M3 3h6v2H5v4H3V3zm12 0h6v6h-2V5h-4V3zM3 15h2v4h4v2H3v-6zm16 4h-4v2h6v-6h-2v4z"/>
+          </svg>`;
+        }
+      }
+
+      document.addEventListener('fullscreenchange',       () => { updateBtnIcon(); scaleGame(); });
+      document.addEventListener('webkitfullscreenchange', () => { updateBtnIcon(); scaleGame(); });
+      document.addEventListener('mozfullscreenchange',    () => { updateBtnIcon(); scaleGame(); });
+
+    })();
+    </script>
+  </body>
+</html>

@@ -1,0 +1,710 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PRIMS GTH WEBPORTS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Varela+Round&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --void:#3a3d42;
+    --panel:#12161c;
+    --panel-2:#20242b;
+    --static:#6fd9c9;
+    --static-dim:#2f5850;
+    --pixel-blue:#4fa8ff;
+    --pixel-blue-dim:#1f4f80;
+    --blood:#7a1418;
+    --blood-bright:#b1262c;
+    --warn:#c9a227;
+    --text-main:#d8dce0;
+    --text-dim:#7b828d;
+    --frame:#20262f;
+  }
+
+  *{box-sizing:border-box; margin:0; padding:0;}
+
+  html,body{
+    width:100%; height:100%;
+    background:radial-gradient(ellipse at center, #52565c 0%, var(--void) 65%, #202226 100%);
+    color:var(--text-main);
+    font-family:'Varela Round', sans-serif;
+    overflow:hidden;
+    -webkit-font-smoothing:antialiased;
+  }
+
+  /* ===================== CROSSFADING HUB BACKGROUND ===================== */
+  .hub-bg-layer{
+    position:fixed; inset:0; z-index:0;
+    background-size:cover;
+    background-position:center;
+    opacity:0;
+    transition:opacity 1s ease;
+  }
+  #hub-bg-scrim{
+    position:fixed; inset:0; z-index:1;
+    pointer-events:none;
+    background:linear-gradient(180deg, rgba(6,7,9,0.55) 0%, rgba(6,7,9,0.72) 55%, rgba(6,7,9,0.85) 100%);
+  }
+
+  /* ===================== BOOT SCREEN ===================== */
+  #boot{
+    position:fixed; inset:0; z-index:999;
+    background:#000;
+    display:flex; align-items:center; justify-content:center;
+    flex-direction:column;
+    cursor:pointer;
+    transition:opacity 0.6s ease;
+  }
+  #boot.hidden{opacity:0; pointer-events:none;}
+  #boot h1{
+    font-family:'Press Start 2P', monospace;
+    color:var(--pixel-blue);
+    font-size:clamp(16px,4vw,32px);
+    line-height:1.5;
+    text-align:center;
+    letter-spacing:1px;
+    text-shadow:0 0 14px rgba(79,168,255,0.55), 0 0 32px rgba(79,168,255,0.25);
+    animation:bootFlicker 3.4s infinite;
+  }
+  #boot p{
+    margin-top:26px;
+    font-family:'Press Start 2P', monospace;
+    color:var(--static);
+    font-size:10px;
+    letter-spacing:3px;
+    text-transform:uppercase;
+    opacity:0.75;
+    animation:pulse 1.6s ease-in-out infinite;
+  }
+  @keyframes pulse{0%,100%{opacity:0.35;}50%{opacity:0.9;}}
+  @keyframes bootFlicker{
+    0%,3%,5%,7%,100%{opacity:1;}
+    4%{opacity:0.3;}
+    6%{opacity:0.7;}
+    41%{opacity:1;}
+    42%{opacity:0.15;}
+    43%{opacity:1;}
+  }
+
+  /* ===================== CRT / STATIC OVERLAY ===================== */
+  #crt-overlay{
+    position:fixed; inset:0; z-index:500;
+    pointer-events:none;
+    background:
+      repeating-linear-gradient(
+        to bottom,
+        rgba(0,0,0,0.14) 0px,
+        rgba(0,0,0,0.14) 1px,
+        transparent 2px,
+        transparent 3px
+      );
+    mix-blend-mode:overlay;
+  }
+  #vignette{
+    position:fixed; inset:0; z-index:499; pointer-events:none;
+    background:radial-gradient(ellipse at center, transparent 40%, rgba(0,0,0,0.7) 100%);
+  }
+  #glitch-bar{
+    position:fixed; left:0; right:0; height:0; z-index:501;
+    pointer-events:none;
+    background:rgba(111,217,201,0.06);
+    opacity:0;
+  }
+  #glitch-bar.active{
+    animation:glitchSweep 0.22s linear;
+  }
+  @keyframes glitchSweep{
+    0%{top:-5%; height:2%; opacity:0.9;}
+    100%{top:105%; height:4%; opacity:0;}
+  }
+
+  /* ===================== LAYOUT ===================== */
+  #app{
+    position:relative; z-index:2;
+    width:100%; height:100%;
+    display:flex; flex-direction:column;
+    opacity:0;
+    transition:opacity 0.8s ease;
+  }
+  #app.visible{opacity:1;}
+
+  header{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:18px 30px 6px;
+  }
+  header .title{
+    font-family:'Press Start 2P', monospace;
+    font-size:clamp(13px,2vw,20px);
+    line-height:1.6;
+    color:var(--pixel-blue);
+    letter-spacing:0.5px;
+    text-shadow:0 0 10px rgba(79,168,255,0.4);
+  }
+  header .title span{color:var(--static); font-family:'Varela Round',sans-serif; font-size:11px; display:block; letter-spacing:4px; text-transform:uppercase; opacity:0.6; margin-top:6px;}
+
+  #mute-btn{
+    width:42px; height:42px; border-radius:50%;
+    background:var(--panel);
+    border:1px solid var(--frame);
+    color:var(--static);
+    font-size:16px;
+    cursor:pointer;
+    display:flex; align-items:center; justify-content:center;
+    transition:border-color 0.2s, color 0.2s;
+  }
+  #mute-btn:hover{border-color:var(--static); box-shadow:0 0 10px rgba(111,217,201,0.25);}
+
+  /* ===================== CAROUSEL ===================== */
+  main{
+    flex:1;
+    display:flex; align-items:center; justify-content:center;
+    position:relative;
+    padding:10px 20px 0;
+  }
+
+  #carousel{
+    position:relative;
+    width:min(78vw, 900px);
+    height:min(52vh, 420px);
+    display:flex; align-items:center; justify-content:center;
+  }
+
+  .arrow{
+    position:absolute; top:50%; transform:translateY(-50%);
+    width:52px; height:52px; border-radius:50%;
+    background:var(--panel);
+    border:1px solid var(--frame);
+    color:var(--text-dim);
+    font-size:22px;
+    cursor:pointer;
+    display:flex; align-items:center; justify-content:center;
+    z-index:50;
+    transition:color 0.2s, border-color 0.2s, transform 0.15s;
+  }
+  .arrow:hover{color:var(--static); border-color:var(--static-dim); transform:translateY(-50%) scale(1.08);}
+  .arrow:active{transform:translateY(-50%) scale(0.95);}
+  #prev-arrow{left:-8px;}
+  #next-arrow{right:-8px;}
+
+  .channel{
+    position:absolute;
+    border-radius:14px;
+    overflow:hidden;
+    cursor:pointer;
+    transition:left 0.45s cubic-bezier(.65,0,.35,1), width 0.45s cubic-bezier(.65,0,.35,1),
+               height 0.45s cubic-bezier(.65,0,.35,1), top 0.45s cubic-bezier(.65,0,.35,1),
+               opacity 0.45s ease, filter 0.45s ease;
+    background-size:cover; background-position:center;
+    background-color:var(--panel-2);
+    border:2px solid var(--frame);
+    image-rendering:pixelated;
+  }
+
+  .channel.pos-current{
+    width:56%; height:100%; left:22%; top:0; opacity:1; z-index:20;
+    filter:brightness(1) saturate(1);
+    box-shadow:0 0 0 1px rgba(79,168,255,0.2), 0 18px 40px rgba(0,0,0,0.6);
+  }
+  .channel.pos-prev{
+    width:24%; height:70%; left:-2%; top:15%; opacity:0.45; z-index:10;
+    filter:brightness(0.4) saturate(0.6) blur(1px);
+    cursor:pointer;
+  }
+  .channel.pos-next{
+    width:24%; height:70%; left:78%; top:15%; opacity:0.45; z-index:10;
+    filter:brightness(0.4) saturate(0.6) blur(1px);
+    cursor:pointer;
+  }
+  .channel.pos-hidden{
+    width:24%; height:70%; left:38%; top:15%; opacity:0; z-index:1; pointer-events:none;
+  }
+
+  .channel-inner{
+    position:absolute; inset:0;
+    display:flex; align-items:flex-end;
+    background:linear-gradient(to top, rgba(6,7,9,0.92) 0%, rgba(6,7,9,0.15) 55%, rgba(6,7,9,0.05) 100%);
+  }
+
+  .channel-fallback{
+    position:absolute; inset:0;
+    display:flex; align-items:center; justify-content:center;
+    font-family:'Press Start 2P', monospace;
+    font-size:9vh;
+    color:rgba(79,168,255,0.14);
+    pointer-events:none;
+  }
+
+  .channel-label{
+    position:relative; z-index:2;
+    padding:16px 18px;
+    width:100%;
+  }
+  .channel-label .num{
+    font-family:'Press Start 2P', monospace;
+    font-size:9px; letter-spacing:1px; color:var(--static); opacity:0.8; text-transform:uppercase;
+  }
+  .channel-label .name{
+    font-family:'Press Start 2P', monospace;
+    font-size:clamp(11px,1.6vw,16px);
+    line-height:1.6;
+    color:var(--pixel-blue);
+    letter-spacing:0.5px;
+    margin-top:8px;
+    text-shadow:0 2px 0 rgba(0,0,0,0.9), 0 0 10px rgba(79,168,255,0.35);
+  }
+  .pos-prev .channel-label, .pos-next .channel-label{display:none;}
+
+  .channel-desc{
+    font-size:12px; color:var(--text-dim); margin-top:8px; max-width:90%;
+  }
+
+  .static-noise{
+    position:absolute; inset:0;
+    opacity:0.05;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+    mix-blend-mode:overlay;
+    pointer-events:none;
+  }
+
+  .play-hint{
+    position:absolute; top:14px; right:14px;
+    font-family:'Press Start 2P', monospace;
+    font-size:9px; letter-spacing:1px; text-transform:uppercase;
+    color:var(--warn); opacity:0; z-index:3;
+    border:1px solid var(--warn); padding:6px 8px; border-radius:4px;
+    transition:opacity 0.25s;
+  }
+  .pos-current:hover .play-hint{opacity:0.85;}
+
+  /* ===================== FOOTER / WII BAR ===================== */
+  footer{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:14px 30px 20px;
+    color:var(--text-dim);
+  }
+  footer .clock{
+    font-size:13px; letter-spacing:1px;
+  }
+  footer .clock b{color:var(--text-main); font-weight:400;}
+  footer .signal{
+    font-size:11px; letter-spacing:2px; text-transform:uppercase;
+    display:flex; align-items:center; gap:8px;
+  }
+  footer .signal .dot{
+    width:7px; height:7px; border-radius:50%; background:var(--pixel-blue);
+    animation:blink 2.2s infinite;
+    box-shadow:0 0 6px rgba(79,168,255,0.6);
+  }
+  @keyframes blink{0%,100%{opacity:1;}50%{opacity:0.2;}}
+  footer .dots{display:flex; gap:6px;}
+  footer .dots span{
+    width:6px; height:6px; border-radius:50%; background:var(--frame);
+    transition:background 0.2s;
+  }
+  footer .dots span.active{background:var(--static);}
+
+  /* ===================== LAUNCH METHOD MODAL ===================== */
+  #launch-modal{
+    position:fixed; inset:0; z-index:850;
+    background:rgba(4,5,6,0.82);
+    display:none;
+    align-items:center; justify-content:center;
+  }
+  #launch-modal.open{display:flex;}
+  .modal-box{
+    width:min(90vw, 380px);
+    background:var(--panel);
+    border:1px solid var(--frame);
+    border-radius:14px;
+    padding:26px 24px 22px;
+    box-shadow:0 20px 60px rgba(0,0,0,0.6);
+  }
+  .modal-box .modal-eyebrow{
+    font-size:10px; letter-spacing:3px; text-transform:uppercase;
+    color:var(--static); opacity:0.7;
+  }
+  .modal-box h2{
+    font-family:'Press Start 2P', monospace;
+    font-size:14px;
+    line-height:1.7;
+    color:var(--pixel-blue);
+    letter-spacing:0.5px;
+    margin:10px 0 22px;
+  }
+  .method-btn{
+    width:100%;
+    display:flex; align-items:center; justify-content:space-between;
+    background:var(--panel-2);
+    border:1px solid var(--frame);
+    color:var(--text-main);
+    padding:13px 16px;
+    border-radius:9px;
+    font-family:'Varela Round',sans-serif;
+    font-size:14px;
+    cursor:pointer;
+    margin-bottom:10px;
+    transition:border-color 0.2s, background 0.2s;
+  }
+  .method-btn:hover{border-color:var(--pixel-blue-dim); background:#1c232b;}
+  .method-btn small{color:var(--text-dim); font-size:11px; display:block; margin-top:2px; font-weight:normal;}
+  .method-btn .label-col{text-align:left;}
+  .method-btn .arrow-glyph{color:var(--pixel-blue); font-size:16px;}
+  #modal-cancel{
+    width:100%; margin-top:6px;
+    background:transparent; border:1px solid var(--frame); color:var(--text-dim);
+    padding:10px; border-radius:9px; cursor:pointer;
+    font-family:'Varela Round',sans-serif; font-size:12px; letter-spacing:1px;
+  }
+  #modal-cancel:hover{color:var(--text-main); border-color:var(--text-dim);}
+
+  /* ===================== IN-PAGE OVERLAY ===================== */
+  #inpage-overlay{
+    position:fixed; inset:0; z-index:800;
+    background:#000;
+    display:none;
+    flex-direction:column;
+  }
+  #inpage-overlay.open{display:flex;}
+  #inpage-bar{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:10px 16px;
+    background:var(--panel);
+    border-bottom:1px solid var(--frame);
+  }
+  #inpage-title{font-size:13px; letter-spacing:1px; color:var(--static);}
+  #inpage-close{
+    background:var(--blood); color:#fff; border:none;
+    padding:7px 16px; border-radius:6px; cursor:pointer;
+    font-family:'Varela Round',sans-serif; font-size:12px; letter-spacing:1px;
+  }
+  #inpage-close:hover{background:var(--blood-bright);}
+  #inpage-frame{flex:1; width:100%; border:none; background:#000;}
+</style>
+</head>
+<body>
+
+<!-- ============ CONFIG: EDIT YOUR GAMES HERE ============ -->
+<script>
+  /*
+    Add or remove entries freely — the arrows cycle through however many
+    games are in this list, not just 3.
+
+    thumbnail:  PATH TO AN IMAGE, e.g. "images/thumb1.png"
+                this is what shows ON the channel tile itself
+                (the box-art / icon you click to launch).
+
+    background: PATH TO AN IMAGE, e.g. "images/bg1.png"
+                this is the FULL-PAGE backdrop behind the whole hub.
+                It crossfades to match whichever game is currently
+                centered — so bg1.png shows while game 1 is active,
+                bg2.png fades in when you arrow over to game 2, etc.
+
+    url:        where the game lives (a .html file, a link, etc)
+
+    There's no fixed openMethod — clicking a channel pops up a picker
+    (About Blank / Direct / In-Page) so you choose per-launch.
+  */
+  const GAMES = [
+    {
+      title: "CGH Big Update V2",
+      desc: "Latest webported CGH Upd, laggy tho and has long loading times",
+      thumbnail: "images/thumb1.png",
+      background: "images/bg1.png",
+      url: "bigupdv2.html"
+    },
+    {
+      title: "CGH 4th of July 2024",
+      desc: "One of the MOST iconic versions",
+      thumbnail: "images/thumb2.png",
+      background: "images/bg2.png",
+      url: "cgh4thofjuly.html"
+    },
+    {
+      title: "Gorilla Tag Horror: Pinkys Revive",
+      desc: "GTH That many ppl know and love bro.",
+      thumbnail: "images/thumb3.png",
+      background: "images/bg3.png",
+      url: "gth.html"
+    }
+  ];
+</script>
+<!-- ======================================================= -->
+
+<div class="hub-bg-layer" id="hub-bg-a"></div>
+<div class="hub-bg-layer" id="hub-bg-b"></div>
+<div id="hub-bg-scrim"></div>
+
+<div id="boot">
+  <h1>prims gth<br>webports</h1>
+  <p>click to enter</p>
+</div>
+
+<div id="crt-overlay"></div>
+<div id="vignette"></div>
+<div id="glitch-bar"></div>
+
+<div id="app">
+  <header>
+    <div class="title">prims gth webports<span></span></div>
+    <button id="mute-btn" aria-label="Toggle sound">🔊</button>
+  </header>
+
+  <main>
+    <div id="carousel">
+      <button class="arrow" id="prev-arrow" aria-label="Previous game">‹</button>
+      <div id="channel-track"></div>
+      <button class="arrow" id="next-arrow" aria-label="Next game">›</button>
+    </div>
+  </main>
+
+  <footer>
+    <div class="clock">TIME &nbsp;<b id="clock-out">--:--</b></div>
+    <div class="dots" id="dots-track"></div>
+    <div class="signal"><span class="dot"></span>REC · CH <span id="ch-num">1</span>/<span id="ch-total">3</span></div>
+  </footer>
+</div>
+
+<div id="launch-modal">
+  <div class="modal-box">
+    <div class="modal-eyebrow">launch method</div>
+    <h2 id="modal-game-title">Choose how to open</h2>
+
+    <button class="method-btn" data-method="aboutblank">
+      <span class="label-col">About Blank<small>opens a blank tab, then loads the game inside it</small></span>
+      <span class="arrow-glyph">›</span>
+    </button>
+    <button class="method-btn" data-method="direct">
+      <span class="label-col">Direct<small>opens the games URL in a new tab</small></span>
+      <span class="arrow-glyph">›</span>
+    </button>
+    <button class="method-btn" data-method="inpage">
+      <span class="label-col">In-Page<small>plays right here in the url</small></span>
+      <span class="arrow-glyph">›</span>
+    </button>
+
+    <button id="modal-cancel">cancel</button>
+  </div>
+</div>
+
+<div id="inpage-overlay">
+  <div id="inpage-bar">
+    <div id="inpage-title">NOW PLAYING</div>
+    <button id="inpage-close">✕ BACK TO GAMES BOYO</button>
+  </div>
+  <iframe id="inpage-frame" src="about:blank"></iframe>
+</div>
+
+<audio id="bgm" src="background.mp3" loop preload="auto"></audio>
+
+<script>
+  const track = document.getElementById('channel-track');
+  const dotsTrack = document.getElementById('dots-track');
+  const chNum = document.getElementById('ch-num');
+  const chTotal = document.getElementById('ch-total');
+  let current = 0;
+  let pendingGame = null;
+  let bgToggle = false;
+
+  chTotal.textContent = GAMES.length;
+
+  /* ===================== CROSSFADING HUB BACKGROUND ===================== */
+  function crossfadeHubBackground(url){
+    const layerA = document.getElementById('hub-bg-a');
+    const layerB = document.getElementById('hub-bg-b');
+    const incoming = bgToggle ? layerA : layerB;
+    const outgoing = bgToggle ? layerB : layerA;
+
+    const preload = new Image();
+    preload.onload = () => {
+      incoming.style.backgroundImage = `url("${url}")`;
+      incoming.style.opacity = '1';
+      outgoing.style.opacity = '0';
+      bgToggle = !bgToggle;
+    };
+    preload.src = url;
+  }
+
+  function buildChannels(){
+    track.innerHTML = '';
+    GAMES.forEach((game, i) => {
+      const el = document.createElement('div');
+      el.className = 'channel';
+      el.dataset.index = i;
+      el.innerHTML = `
+        <div class="channel-fallback">${game.title.charAt(0).toUpperCase()}</div>
+        <div class="static-noise"></div>
+        <div class="play-hint">▶ launch</div>
+        <div class="channel-inner">
+          <div class="channel-label">
+            <div class="num">CH ${String(i+1).padStart(2,'0')}</div>
+            <div class="name">${game.title}</div>
+            <div class="channel-desc">${game.desc}</div>
+          </div>
+        </div>
+      `;
+      el.addEventListener('click', () => handleChannelClick(i));
+      track.appendChild(el);
+
+      const thumb = new Image();
+      thumb.onload = () => { el.style.backgroundImage = `url("${game.thumbnail}")`; };
+      thumb.src = game.thumbnail;
+
+      const dot = document.createElement('span');
+      dotsTrack.appendChild(dot);
+    });
+    layoutChannels();
+    crossfadeHubBackground(GAMES[current].background);
+  }
+
+  function layoutChannels(){
+    const total = GAMES.length;
+    const children = track.querySelectorAll('.channel');
+    children.forEach((el, i) => {
+      el.classList.remove('pos-current','pos-prev','pos-next','pos-hidden');
+      if (i === current) el.classList.add('pos-current');
+      else if (i === (current - 1 + total) % total) el.classList.add('pos-prev');
+      else if (i === (current + 1) % total) el.classList.add('pos-next');
+      else el.classList.add('pos-hidden');
+    });
+    [...dotsTrack.children].forEach((d,i) => d.classList.toggle('active', i===current));
+    chNum.textContent = current + 1;
+  }
+
+  function handleChannelClick(i){
+    if (i === current){
+      openLaunchModal(GAMES[current]);
+    } else {
+      current = i;
+      layoutChannels();
+      crossfadeHubBackground(GAMES[current].background);
+      fireGlitch();
+    }
+  }
+
+  document.getElementById('prev-arrow').addEventListener('click', () => {
+    current = (current - 1 + GAMES.length) % GAMES.length;
+    layoutChannels();
+    crossfadeHubBackground(GAMES[current].background);
+    fireGlitch();
+  });
+  document.getElementById('next-arrow').addEventListener('click', () => {
+    current = (current + 1) % GAMES.length;
+    layoutChannels();
+    crossfadeHubBackground(GAMES[current].background);
+    fireGlitch();
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (document.getElementById('launch-modal').classList.contains('open')){
+      if (e.key === 'Escape') closeLaunchModal();
+      return;
+    }
+    if (e.key === 'ArrowLeft') document.getElementById('prev-arrow').click();
+    if (e.key === 'ArrowRight') document.getElementById('next-arrow').click();
+    if (e.key === 'Enter') openLaunchModal(GAMES[current]);
+    if (e.key === 'Escape') closeInPage();
+  });
+
+  /* ===================== LAUNCH MODAL ===================== */
+  const launchModal = document.getElementById('launch-modal');
+
+  function openLaunchModal(game){
+    pendingGame = game;
+    document.getElementById('modal-game-title').textContent = game.title;
+    launchModal.classList.add('open');
+  }
+  function closeLaunchModal(){
+    launchModal.classList.remove('open');
+    pendingGame = null;
+  }
+  document.getElementById('modal-cancel').addEventListener('click', closeLaunchModal);
+  launchModal.addEventListener('click', (e) => { if (e.target === launchModal) closeLaunchModal(); });
+
+  document.querySelectorAll('.method-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (!pendingGame) return;
+      openGame(pendingGame, btn.dataset.method);
+      closeLaunchModal();
+    });
+  });
+
+  /* ===================== OPEN METHODS ===================== */
+  function openGame(game, method){
+    switch(method){
+      case 'aboutblank': {
+        const win = window.open('', '_blank');
+        if (win){
+          win.document.write(
+            '<title>.</title><style>html,body{margin:0;height:100%;background:#000;}iframe{border:0;width:100%;height:100%;}</style>' +
+            '<iframe src="' + game.url + '"></iframe>'
+          );
+        }
+        break;
+      }
+      case 'direct': {
+        window.open(game.url, '_blank');
+        break;
+      }
+      case 'inpage': {
+        document.getElementById('inpage-title').textContent = 'NOW PLAYING — ' + game.title.toUpperCase();
+        document.getElementById('inpage-frame').src = game.url;
+        document.getElementById('inpage-overlay').classList.add('open');
+        break;
+      }
+    }
+  }
+
+  document.getElementById('inpage-close').addEventListener('click', closeInPage);
+  function closeInPage(){
+    document.getElementById('inpage-overlay').classList.remove('open');
+    document.getElementById('inpage-frame').src = 'about:blank';
+  }
+
+  /* ===================== BOOT / AUDIO ===================== */
+  const bgm = document.getElementById('bgm');
+  const muteBtn = document.getElementById('mute-btn');
+  let muted = false;
+
+  document.getElementById('boot').addEventListener('click', () => {
+    document.getElementById('boot').classList.add('hidden');
+    document.getElementById('app').classList.add('visible');
+    bgm.volume = 0.5;
+    bgm.play().catch(() => { /* file not added yet, or blocked — that's fine */ });
+    setTimeout(() => document.getElementById('boot').style.display = 'none', 700);
+  });
+
+  muteBtn.addEventListener('click', () => {
+    muted = !muted;
+    bgm.muted = muted;
+    muteBtn.textContent = muted ? '🔇' : '🔊';
+  });
+
+  /* ===================== CLOCK ===================== */
+  function updateClock(){
+    const now = new Date();
+    let h = now.getHours();
+    const m = String(now.getMinutes()).padStart(2,'0');
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    h = h % 12; if (h === 0) h = 12;
+    document.getElementById('clock-out').textContent = `${h}:${m} ${ampm}`;
+  }
+  updateClock();
+  setInterval(updateClock, 15000);
+
+  /* ===================== AMBIENT GLITCH ===================== */
+  function fireGlitch(){
+    const bar = document.getElementById('glitch-bar');
+    bar.classList.remove('active');
+    void bar.offsetWidth;
+    bar.classList.add('active');
+  }
+  setInterval(() => { if (Math.random() < 0.35) fireGlitch(); }, 4000);
+
+  buildChannels();
+</script>
+
+</body>
+</html>
